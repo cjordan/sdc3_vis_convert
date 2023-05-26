@@ -182,6 +182,7 @@ pub fn write_vis<'a>(
                     array_pos,
                     tile_positions.to_vec(),
                     dut1,
+                    vis_ctx.num_vis_pols,
                 );
                 ms.initialize(&vis_ctx, &marlu_obs_ctx, Some(&history))
                     .unwrap();
