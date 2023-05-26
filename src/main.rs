@@ -15,13 +15,10 @@ use sdc3_vis_convert::{
     VisInputType,
 };
 
-const BASE_FREQ_HZ: u64 = 106_000_000;
-const CHAN_RES_HZ: u64 = 100_000;
-
 #[derive(Parser)]
 #[clap(global_setting(AppSettings::DeriveDisplayOrder))]
 #[clap(disable_help_subcommand = true)]
-#[clap(propagate_version = true)]
+// #[clap(propagate_version = true)]
 #[clap(infer_long_args = true)]
 struct Args {
     /// The data to be flattened.
@@ -104,12 +101,17 @@ fn main() {
 
     // Add all frequencies.
     for file in args.data.iter().skip(1) {
-        let file = file.display().to_string();
-        let freq_offset_str = file.split('_').last().unwrap().split('.').next().unwrap();
-        let freq_offset: u64 = freq_offset_str.parse().unwrap();
-        obs_context
-            .fine_chan_freqs
-            .push(BASE_FREQ_HZ + CHAN_RES_HZ * freq_offset);
+        let mut reader: Box<dyn VisRead> = match input_type {
+            VisInputType::MeasurementSet => Box::new(MsReader::new(file)),
+
+            VisInputType::Uvfits => Box::new(UvfitsReader::new(file)),
+        };
+        let file_obs_context = reader.get_obs_context();
+        for freq in file_obs_context.fine_chan_freqs.iter() {
+            if !obs_context.fine_chan_freqs.contains(freq) {
+                obs_context.fine_chan_freqs.push(*freq);
+            }
+        }
     }
     obs_context.fine_chan_freqs.sort_unstable();
     let num_channels = obs_context.fine_chan_freqs.len();
