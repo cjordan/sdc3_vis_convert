@@ -283,7 +283,7 @@ impl MsReader {
             // try get_cell_as_vec
             let ms_data: c32 = main_table.get_cell("DATA", row).unwrap();
             unsafe {
-                *data_bf.uget_mut((i_bl, 0)) = ms_data;
+                *data_bf.uget_mut((0, i_bl)) = ms_data;
             }
             // data_bf.slice_mut(s![i_bl..i_bl + 1, ..]).assign(&ms_data);
         }
