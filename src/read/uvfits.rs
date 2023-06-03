@@ -214,7 +214,7 @@ impl UvfitsReader {
             unflagged_timesteps,
             phase_centre,
             array_position,
-            dut1: Duration::from_seconds(-0.1093301773071),
+            dut1: Duration::from_seconds(super::TIME_OFFSET),
             tile_names,
             tile_xyzs,
             time_res,
@@ -264,7 +264,7 @@ impl UvfitsReader {
             .chunks_exact(3)
             .zip(data_fb.iter_mut())
             .for_each(|(in_data, out_data)| {
-                *out_data = c32::new(in_data[0], in_data[1]);
+                *out_data = c32::new(in_data[0], -in_data[1]);
             });
     }
     // }

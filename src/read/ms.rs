@@ -248,7 +248,7 @@ impl MsReader {
             unflagged_timesteps,
             phase_centre,
             array_position,
-            dut1: Duration::from_seconds(-0.1093301773071),
+            dut1: Duration::from_seconds(super::TIME_OFFSET),
             tile_names,
             tile_xyzs,
             time_res,
@@ -283,7 +283,7 @@ impl MsReader {
             // try get_cell_as_vec
             let ms_data: c32 = main_table.get_cell("DATA", row).unwrap();
             unsafe {
-                *data_bf.uget_mut((0, i_bl)) = ms_data;
+                *data_bf.uget_mut((0, i_bl)) = ms_data.conj();
             }
             // data_bf.slice_mut(s![i_bl..i_bl + 1, ..]).assign(&ms_data);
         }

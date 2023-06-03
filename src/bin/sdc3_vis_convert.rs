@@ -8,7 +8,7 @@ use log::{debug, info};
 use ndarray::prelude::*;
 use vec1::{vec1, Vec1};
 
-use sdc3_vis_convert::{
+use sdc3::{
     averaging::timesteps_to_timeblocks,
     read::{ms::MsReader, uvfits::UvfitsReader, VisRead},
     write::{write_vis, VisOutputType},
@@ -18,7 +18,6 @@ use sdc3_vis_convert::{
 #[derive(Parser)]
 #[clap(global_setting(AppSettings::DeriveDisplayOrder))]
 #[clap(disable_help_subcommand = true)]
-// #[clap(propagate_version = true)]
 #[clap(infer_long_args = true)]
 struct Args {
     /// The data to be flattened.

@@ -9,6 +9,8 @@ use ndarray::ArrayViewMut2;
 
 use super::{ObsContext, VisInputType};
 
+const TIME_OFFSET: f64 = -0.9506479220727313;
+
 pub trait VisRead: Sync + Send {
     fn get_obs_context(&self) -> &ObsContext;
 

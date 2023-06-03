@@ -1,9 +1,14 @@
 [package]
-name = "sdc3_vis_convert"
+name = "sdc3"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "sdc3"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
+argmin = { version = "0.8.1", features = ["_ndarrayl"] }
 clap = { version = "3.1.0", features = ["derive", "wrap_help"] }
 crossbeam-channel = "0.5.6"
 crossbeam-utils = "0.8.12"
@@ -13,10 +18,16 @@ fitsio-sys = "0.4.0"
 hifitime = "3.3.0"
 indicatif = { version = "0.17.0", features = ["rayon"] }
 itertools = "0.10.0"
+lazy_static = "1.4.0"
 log = "0.4.0"
 # marlu = "0.9.1"
 # marlu = { path = "../marlu" }
 marlu = { git = "https://github.com/cjordan/Marlu", branch = "hacks" }
 ndarray = { version = "0.15.4", features = ["rayon"] }
 rayon = "1.5.0"
+thiserror = "1.0.7"
 vec1 = "1.5.0"
+# rubbl_casatables = "0.7.0"
+
+# pyo3 = { version = "0.18.2", features = ["extension-module"] }
+# numpy = "0.18.0"

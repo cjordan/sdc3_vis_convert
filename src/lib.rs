@@ -1,6 +1,8 @@
 //! Ripped out of hyperdrive.
 
 pub mod averaging;
+pub mod fits;
+mod python;
 pub mod read;
 pub mod write;
 
