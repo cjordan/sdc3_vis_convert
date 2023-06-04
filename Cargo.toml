@@ -7,6 +7,10 @@ edition = "2021"
 name = "sdc3"
 crate-type = ["rlib", "cdylib"]
 
+[features]
+default = ["cfitsio-static"]
+cfitsio-static = ["fitsio-sys/fitsio-src"]
+
 [dependencies]
 argmin = { version = "0.8.1", features = ["_ndarrayl"] }
 clap = { version = "3.1.0", features = ["derive", "wrap_help"] }
