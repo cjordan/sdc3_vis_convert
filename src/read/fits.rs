@@ -77,9 +77,9 @@ pub(crate) fn fits_get_col<T: fitsio::tables::ReadsCol>(
 /// or may not exist, pull out the long string of the keyword. This deals with
 /// FITSs CONTINUE mechanism by calling a low level fits function.
 #[track_caller]
-pub(crate) fn fits_get_optional_key_long_string(
+pub(crate) fn _fits_get_optional_key_long_string(
     fits_fptr: &mut fitsio::FitsFile,
-    hdu: &FitsHdu,
+    _hdu: &FitsHdu,
     keyword: &str,
 ) -> Option<String> {
     // Read the long string.
@@ -127,7 +127,7 @@ pub(crate) fn _fits_get_required_key_long_string(
     hdu: &FitsHdu,
     keyword: &str,
 ) -> String {
-    match fits_get_optional_key_long_string(fits_fptr, hdu, keyword) {
+    match _fits_get_optional_key_long_string(fits_fptr, hdu, keyword) {
         Some(value) => value,
         None => panic!("bad long string"),
     }
@@ -136,7 +136,7 @@ pub(crate) fn _fits_get_required_key_long_string(
 /// Get the size of the image on the supplied FITS file pointer and HDU.
 #[track_caller]
 pub(crate) fn _fits_get_image_size<'a>(
-    fits_fptr: &mut FitsFile,
+    _fits_fptr: &mut FitsFile,
     hdu: &'a FitsHdu,
 ) -> &'a Vec<usize> {
     match &hdu.info {
@@ -147,7 +147,7 @@ pub(crate) fn _fits_get_image_size<'a>(
 
 /// Given a FITS file pointer and a HDU, read the associated image.
 #[track_caller]
-pub(crate) fn fits_get_image<T: fitsio::images::ReadImage>(
+pub(crate) fn _fits_get_image<T: fitsio::images::ReadImage>(
     fits_fptr: &mut FitsFile,
     hdu: &FitsHdu,
 ) -> T {
@@ -161,7 +161,7 @@ pub(crate) fn fits_get_image<T: fitsio::images::ReadImage>(
 #[track_caller]
 pub(crate) fn _fits_get_float_image_into_buffer(
     fits_fptr: &mut FitsFile,
-    hdu: &FitsHdu,
+    _hdu: &FitsHdu,
     buffer: &mut [f32],
 ) {
     unsafe {

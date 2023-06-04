@@ -2,7 +2,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     os::raw::c_char,
     path::{Path, PathBuf},
 };
@@ -10,7 +10,7 @@ use std::{
 use fitsio::{errors::check_status as fits_check_status, hdu::FitsHdu, FitsFile};
 use hifitime::{Duration, Epoch, TimeUnits};
 use log::{debug, warn};
-use marlu::{c32, LatLngHeight, RADec, XyzGeocentric};
+use marlu::{c32, uvfits::decode_uvfits_baseline, LatLngHeight, RADec, XyzGeocentric};
 use ndarray::prelude::*;
 use vec1::Vec1;
 
@@ -55,14 +55,6 @@ impl UvfitsReader {
         let tile_names: Vec<String> = fits_get_col(&mut uvfits_fptr, &antenna_table_hdu, "ANNAME");
         let tile_names = Vec1::try_from_vec(tile_names).unwrap();
         let total_num_tiles = tile_names.len();
-
-        // Set up the tile map.
-        let tile_nums: Vec<u32> = fits_get_col(&mut uvfits_fptr, &antenna_table_hdu, "NOSTA");
-        let tile_map: HashMap<usize, usize> = tile_nums
-            .into_iter()
-            .zip(0..total_num_tiles)
-            .map(|(a, b)| (a.try_into().expect("not larger than usize::MAX"), b))
-            .collect();
 
         let array_position = LatLngHeight {
             longitude_rad: 116.7644482_f64.to_radians(),
@@ -380,40 +372,139 @@ impl UvfitsMetadata {
         let num_fine_freq_chans = num_fine_freq_chans_str.parse::<usize>().unwrap();
 
         // Read unique group parameters (timestamps and baselines/antennas).
+        let mut uvfits_baselines = HashSet::new();
+        let mut uvfits_antennas = HashSet::new();
         let mut jd_frac_timestamp_set = HashSet::new();
         let mut jd_frac_timestamps = vec![];
 
-        let mut group_params = Array2::zeros((num_rows, pcount));
-        unsafe {
-            let mut status = 0;
-            // ffggpe = fits_read_grppar_flt
-            fitsio_sys::ffggpe(
-                uvfits.as_raw(), /* I - FITS file pointer                       */
-                1,               /* I - group to read (1 = 1st group)           */
-                1,               /* I - first vector element to read (1 = 1st)  */
-                (pcount * num_rows)
-                    .try_into()
-                    .expect("not larger than i64::MAX"), /* I - number of values to read                */
-                group_params.as_mut_ptr(), /* O - array of values that are returned       */
-                &mut status,               /* IO - error status                           */
-            );
-            // Check the status.
-            fits_check_status(status).unwrap();
-        }
+        // Determine the number of baselines present. We assume that all
+        // baselines of a timestep are grouped together, so the number of
+        // baselines is found when the timestamp changes.
+        let mut group_params = Array2::zeros((num_rows.min((512 * 511) / 2), pcount)); // 8257 is likely to get all MWA baselines in a single pass.
+        let num_cross_and_auto_baselines = {
+            let mut num_cross_and_auto_baselines = None;
+            let mut i_row = 0;
+            'outer: while i_row < num_rows {
+                let n = group_params.len().min(num_rows.abs_diff(i_row) * pcount);
+                unsafe {
+                    let mut status = 0;
+                    // ffggpe = fits_read_grppar_flt
+                    fitsio_sys::ffggpe(
+                        uvfits.as_raw(), /* I - FITS file pointer                       */
+                        (i_row + 1).try_into().expect("not larger than i64::MAX"), /* I - group to read (1 = 1st group)           */
+                        1, /* I - first vector element to read (1 = 1st)  */
+                        n.try_into().expect("not larger than i64::MAX"), /* I - number of values to read                */
+                        group_params.as_mut_ptr(), /* O - array of values that are returned       */
+                        &mut status,               /* IO - error status                           */
+                    );
+                    // Check the status.
+                    fits_check_status(status).unwrap();
+                }
 
-        for params in group_params.outer_iter() {
+                for params in group_params.outer_iter().take(n) {
+                    // Track information on the timestamps.
+                    let jd_frac = {
+                        let mut t =
+                            Duration::from_days(f64::from(params[usize::from(indices.date1) - 1]));
+                        // Use the second date, if it's there.
+                        if let Some(d2) = indices.date2 {
+                            t += Duration::from_days(f64::from(params[usize::from(d2) - 1]));
+                        }
+                        t
+                    };
+                    let nanos = jd_frac.total_nanoseconds();
+                    // If our set is empty, it's because this is the first
+                    // timestamp.
+                    if jd_frac_timestamp_set.is_empty() {
+                        jd_frac_timestamp_set.insert(nanos);
+                        jd_frac_timestamps.push(jd_frac);
+                    }
+                    // If the set doesn't contain this timestamp, we've hit the
+                    // next timestep, and we've therefore found the number of
+                    // baselines per timestep.
+                    if !jd_frac_timestamp_set.contains(&nanos) {
+                        num_cross_and_auto_baselines = Some(i_row);
+                        break 'outer;
+                    }
+
+                    // Track information on the baseline/antennas.
+                    match indices.baseline_or_antennas {
+                        BaselineOrAntennas::Baseline { index } => {
+                            let uvfits_bl = params[usize::from(index) - 1] as usize;
+                            if !uvfits_baselines.contains(&uvfits_bl) {
+                                uvfits_baselines.insert(uvfits_bl);
+                            }
+                            decode_uvfits_baseline(uvfits_bl)
+                        }
+                        BaselineOrAntennas::Antennas { index1, index2 } => {
+                            let uvfits_ant1 = params[usize::from(index1) - 1] as usize;
+                            let uvfits_ant2 = params[usize::from(index2) - 1] as usize;
+                            uvfits_antennas.insert(uvfits_ant1);
+                            uvfits_antennas.insert(uvfits_ant2);
+                            (uvfits_ant1, uvfits_ant2)
+                        }
+                    };
+
+                    i_row += 1;
+                }
+            }
+            num_cross_and_auto_baselines.unwrap_or(i_row)
+        };
+
+        // Now get the timestamps out of all the other timesteps.
+        let mut i_row = num_cross_and_auto_baselines;
+        while i_row < num_rows {
+            unsafe {
+                let mut status = 0;
+                // ffggpe = fits_read_grppar_flt
+                fitsio_sys::ffggpe(
+                    uvfits.as_raw(), /* I - FITS file pointer                       */
+                    (i_row + 1).try_into().expect("not larger than i64::MAX"), /* I - group to read (1 = 1st group)           */
+                    1, /* I - first vector element to read (1 = 1st)  */
+                    pcount.try_into().expect("not larger than i64::MAX"), /* I - number of values to read                */
+                    group_params.as_mut_ptr(), /* O - array of values that are returned       */
+                    &mut status,               /* IO - error status                           */
+                );
+                // Check the status.
+                fits_check_status(status).unwrap();
+            }
+
+            // Take the metadata out of read-in group parameters.
             let jd_frac = {
-                let mut t = Duration::from_days(f64::from(params[usize::from(indices.date1) - 1]));
+                let mut t = Duration::from_days(f64::from(
+                    group_params[(0, usize::from(indices.date1) - 1)],
+                ));
                 // Use the second date, if it's there.
                 if let Some(d2) = indices.date2 {
-                    t += Duration::from_days(f64::from(params[usize::from(d2) - 1]));
+                    t += Duration::from_days(f64::from(group_params[(0, usize::from(d2) - 1)]));
                 }
                 t
             };
-            if !jd_frac_timestamp_set.contains(&jd_frac.total_nanoseconds()) {
-                jd_frac_timestamp_set.insert(jd_frac.total_nanoseconds());
+            let nanos = jd_frac.total_nanoseconds();
+            if !jd_frac_timestamp_set.contains(&nanos) {
+                jd_frac_timestamp_set.insert(nanos);
                 jd_frac_timestamps.push(jd_frac);
             }
+
+            match indices.baseline_or_antennas {
+                BaselineOrAntennas::Baseline { index } => {
+                    let uvfits_bl = group_params[(0, usize::from(index) - 1)] as usize;
+                    if !uvfits_baselines.contains(&uvfits_bl) {
+                        // TODO: error
+                    }
+                }
+                BaselineOrAntennas::Antennas { index1, index2 } => {
+                    let uvfits_ant1 = group_params[(0, usize::from(index1) - 1)] as usize;
+                    let uvfits_ant2 = group_params[(0, usize::from(index2) - 1)] as usize;
+                    if !uvfits_antennas.contains(&uvfits_ant1)
+                        || !uvfits_antennas.contains(&uvfits_ant2)
+                    {
+                        // TODO: Error
+                    }
+                }
+            }
+
+            i_row += num_cross_and_auto_baselines;
         }
 
         UvfitsMetadata {
@@ -427,6 +518,13 @@ impl UvfitsMetadata {
 }
 
 #[derive(Debug)]
+enum BaselineOrAntennas {
+    Baseline { index: u8 },
+
+    Antennas { index1: u8, index2: u8 },
+}
+
+#[derive(Debug)]
 struct Indices {
     /// PTYPE
     u: u8,
@@ -434,6 +532,8 @@ struct Indices {
     v: u8,
     /// PTYPE
     w: u8,
+    /// PTYPE
+    baseline_or_antennas: BaselineOrAntennas,
     /// PTYPE
     date1: u8,
     /// PTYPE
@@ -460,7 +560,8 @@ impl Indices {
         // Accumulate the "PTYPE" keys.
         let mut ptypes = Vec::with_capacity(12);
         for i in 1.. {
-            let ptype: Option<String> = fits_get_optional_key(uvfits, hdu, &format!("PTYPE{i}"));
+            let ptype: Option<String> =
+                fits_get_optional_key::<String>(uvfits, hdu, &format!("PTYPE{i}"));
             match ptype {
                 Some(ptype) => ptypes.push(ptype),
 
@@ -486,55 +587,70 @@ impl Indices {
                     if u_index.is_none() {
                         u_index = Some(ii)
                     } else {
-                        warn!("Found another UU key -- only using the first");
+                        warn!("Found another uvfits UU key -- only using the first");
                     }
                 }
                 "VV" => {
                     if v_index.is_none() {
                         v_index = Some(ii)
                     } else {
-                        warn!("Found another VV key -- only using the first");
+                        warn!("Found another uvfits VV key -- only using the first");
                     }
                 }
                 "WW" => {
                     if w_index.is_none() {
                         w_index = Some(ii)
                     } else {
-                        warn!("Found another WW key -- only using the first");
+                        warn!("Found another uvfits WW key -- only using the first");
                     }
                 }
                 "BASELINE" => {
                     if baseline_index.is_none() {
                         baseline_index = Some(ii)
                     } else {
-                        warn!("Found another BASELINE key -- only using the first");
+                        warn!("Found another uvfits BASELINE key -- only using the first");
                     }
                 }
                 "ANTENNA1" => {
                     if antenna1_index.is_none() {
                         antenna1_index = Some(ii)
                     } else {
-                        warn!("Found another ANTENNA1 key -- only using the first");
+                        warn!("Found another uvfits ANTENNA1 key -- only using the first");
                     }
                 }
                 "ANTENNA2" => {
                     if antenna2_index.is_none() {
                         antenna2_index = Some(ii)
                     } else {
-                        warn!("Found another ANTENNA1 key -- only using the first");
+                        warn!("Found another uvfits ANTENNA1 key -- only using the first");
                     }
                 }
                 "DATE" | "_DATE" => match (date1_index, date2_index) {
                     (None, None) => date1_index = Some(ii),
                     (Some(_), None) => date2_index = Some(ii),
                     (Some(_), Some(_)) => {
-                        warn!("Found more than 2 DATE/_DATE keys -- only using the first two")
+                        warn!(
+                            "Found more than 2 uvfits DATE/_DATE keys -- only using the first two"
+                        )
                     }
                     (None, Some(_)) => unreachable!(),
                 },
                 _ => (),
             }
         }
+
+        // Handle problems surrounding some combination of BASELINE and
+        // ANTENNA1/ANTENNA2.
+        let baseline_or_antennas = match (baseline_index, antenna1_index, antenna2_index) {
+            // These are OK.
+            (Some(index), None, None) => BaselineOrAntennas::Baseline { index },
+            (None, Some(index1), Some(index2)) => BaselineOrAntennas::Antennas { index1, index2 },
+            (Some(index), Some(_), _) | (Some(index), _, Some(_)) => {
+                warn!("Found both uvfits BASELINE and ANTENNA keys; only using BASELINE");
+                BaselineOrAntennas::Baseline { index }
+            }
+            _ => panic!("bad indices"),
+        };
 
         let (u, v, w, date1) = match (u_index, v_index, w_index, date1_index) {
             (Some(u), Some(v), Some(w), Some(date1)) => (u, v, w, date1),
@@ -544,7 +660,8 @@ impl Indices {
         // Now find CTYPEs.
         let mut ctypes = Vec::with_capacity(12);
         for i in 2.. {
-            let ctype: Option<String> = fits_get_optional_key(uvfits, hdu, &format!("CTYPE{i}"));
+            let ctype: Option<String> =
+                fits_get_optional_key::<String>(uvfits, hdu, &format!("CTYPE{i}"));
             match ctype {
                 Some(ctype) => ctypes.push(ctype),
 
@@ -583,6 +700,7 @@ impl Indices {
             u,
             v,
             w,
+            baseline_or_antennas,
             date1,
             date2: date2_index,
             complex,

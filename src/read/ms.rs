@@ -39,7 +39,7 @@ pub struct MsReader {
 
     /// The name of the column to be used containing visibility data in the main
     /// column.
-    data_col_name: &'static str,
+    _data_col_name: &'static str,
 }
 
 impl MsReader {
@@ -57,7 +57,7 @@ impl MsReader {
 
         let mut main_table = read_table(ms, None);
         assert!(main_table.n_rows() > 0);
-        let data_col_name = "DATA";
+        let _data_col_name = "DATA";
 
         // Get the tile names and XYZ positions.
         let mut antenna_table = read_table(ms, Some("ANTENNA"));
@@ -260,7 +260,7 @@ impl MsReader {
             obs_context,
             ms: ms.to_path_buf(),
             step,
-            data_col_name,
+            _data_col_name,
         }
     }
 
@@ -276,7 +276,7 @@ impl MsReader {
         let row_range = row_range_start as u64..row_range_end as u64;
 
         let mut main_table = read_table(&self.ms, None);
-        let mut row_index = row_range.start;
+        let mut _row_index = row_range.start;
         // let mut i_bl = 0;
 
         for (i_bl, row) in row_range.enumerate() {
