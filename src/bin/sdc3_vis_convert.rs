@@ -15,6 +15,9 @@ use sdc3::{
     VisInputType,
 };
 
+const BASE_FREQ_HZ: u64 = 106_000_000;
+const FREQ_RES_HZ: u64 = 100_000;
+
 #[derive(Parser)]
 #[clap(global_setting(AppSettings::DeriveDisplayOrder))]
 #[clap(disable_help_subcommand = true)]
@@ -98,18 +101,27 @@ fn main() {
     let timeblocks =
         timesteps_to_timeblocks(&obs_context.timestamps, time_average_factor, &timesteps);
 
-    // Add all frequencies.
+    // Add all frequencies. We assume the frequencies from the filenames,
+    // because it's *really* slow to get them from the metadata.
     for file in args.data.iter().skip(1) {
-        let mut reader: Box<dyn VisRead> = match input_type {
-            VisInputType::MeasurementSet => Box::new(MsReader::new(file)),
-
-            VisInputType::Uvfits => Box::new(UvfitsReader::new(file)),
-        };
-        let file_obs_context = reader.get_obs_context();
-        for freq in file_obs_context.fine_chan_freqs.iter() {
-            if !obs_context.fine_chan_freqs.contains(freq) {
-                obs_context.fine_chan_freqs.push(*freq);
+        let file_freq_index = {
+            let mut index = None;
+            let mut found_ifrq = false;
+            for between_underscores in file.to_string_lossy().split('_') {
+                if between_underscores == "IFRQ" {
+                    found_ifrq = true;
+                    continue;
+                }
+                if found_ifrq {
+                    let index_part = between_underscores.split('.').next().unwrap();
+                    index = Some(index_part.parse::<u64>().unwrap());
+                }
             }
+            index.unwrap()
+        };
+        let freq = BASE_FREQ_HZ + FREQ_RES_HZ * file_freq_index;
+        if !obs_context.fine_chan_freqs.contains(&freq) {
+            obs_context.fine_chan_freqs.push(freq);
         }
     }
     obs_context.fine_chan_freqs.sort_unstable();
