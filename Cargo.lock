@@ -768,8 +768,8 @@ dependencies = [
 
 [[package]]
 name = "marlu"
-version = "0.9.1"
-source = "git+https://github.com/cjordan/Marlu?branch=hacks#0d114a438112c11698b221563c56dffef084be74"
+version = "0.10.1"
+source = "git+https://github.com/cjordan/Marlu?branch=SDC3#7e7af13e64f4f906d85a24d56ca77a7e8524f0d0"
 dependencies = [
  "built",
  "cfg-if",
@@ -778,7 +778,6 @@ dependencies = [
  "fitsio-sys",
  "flate2",
  "hifitime",
- "indicatif",
  "itertools",
  "lazy_static",
  "log",

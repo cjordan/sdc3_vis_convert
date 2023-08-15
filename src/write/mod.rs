@@ -169,6 +169,7 @@ pub fn write_vis<'a>(
                     marlu_obs_ctx.name.as_deref(),
                     tile_names.to_vec(),
                     tile_positions.to_vec(),
+                    false,
                     Some(&history),
                 )
                 .unwrap();
@@ -182,6 +183,7 @@ pub fn write_vis<'a>(
                     array_pos,
                     tile_positions.to_vec(),
                     dut1,
+                    false,
                     vis_ctx.num_vis_pols,
                 );
                 ms.initialize(&vis_ctx, &marlu_obs_ctx, Some(&history))
@@ -266,7 +268,7 @@ pub fn write_vis<'a>(
             let weights = Array3::ones(cross_data.dim());
             for vis_writer in writers.iter_mut() {
                 vis_writer
-                    .write_vis(cross_data.view(), weights.view(), &chunk_vis_ctx, false)
+                    .write_vis(cross_data.view(), weights.view(), &chunk_vis_ctx)
                     .unwrap();
                 // Should we continue?
                 if error.load() {
